@@ -13,17 +13,29 @@ local section = tab.new_section('Visauls')
 local section1 = tab.new_section('Aimbot')
 
 -- // Sector \\ --
-local sector = section.new_sector(Aimbot', 'Left')
-local sector1 = section.new_sector('Visauls', 'Right')
+local sector = section.new_sector(A+V', 'Left')
+local sector1 = section.new_sector('Coming soon', 'Right')
 
 -- // Elements \\ -- (Type, Name, State, Callback)
-local button = sector.element('Button', 'Button', nil, function()
+local button = sector.element('Button', 'ArrowsV', nil, function()
 
 end)
 
-local toggle = sector.element('Toggle', 'Toggle', false, function(v)
-   print(v.Toggle) -- :nerd:
+-- // Elements \\ -- (Type, Name, State, Callback)
+local button = sector.element('Button', 'Op esp', nil, function()
+
 end)
+
+-- // Elements \\ -- (Type, Name, State, Callback)
+local button = sector.element('Button', 'RadarV', nil, function()
+
+end)
+
+-- // Elements \\ -- (Type, Name, State, Callback)
+local button = sector.element('Button', 'LegitEsp', nil, function()
+
+end)
+
 
 toggle:add_color({Color = Color3.fromRGB(204, 204, 255)}, nil, function(v)
    print(v.Color)    
