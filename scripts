@@ -1,119 +1,194 @@
-local DistFromCenter = 80
-local TriangleHeight = 16
-local TriangleWidth = 16
-local TriangleFilled = true
-local TriangleTransparency = 0
-local TriangleThickness = 1
-local TriangleColor = Color3.fromRGB(224, 176, 255)
-local AntiAliasing = false
-
-----------------------------------------------------------------
-
 local Players = game:service("Players")
 local Player = Players.LocalPlayer
-local Camera = workspace.CurrentCamera
+local Mouse = Player:GetMouse()
+local Camera = game:service("Workspace").CurrentCamera
 local RS = game:service("RunService")
+local UIS = game:service("UserInputService")
 
-local V3 = Vector3.new
-local V2 = Vector2.new
-local CF = CFrame.new
-local COS = math.cos
-local SIN = math.sin
-local RAD = math.rad
-local DRAWING = Drawing.new
-local CWRAP = coroutine.wrap
-local ROUND = math.round
+repeat wait() until Player.Character ~= nil and Player.Character.PrimaryPart ~= nil
 
-local function GetRelative(pos, char)
-    if not char then return V2(0,0) end
+local LerpColorModule = loadstring(game:HttpGet("https://pastebin.com/raw/wRnsJeid"))()
+local HealthBarLerp = LerpColorModule:Lerp(Color3.fromRGB(255, 0, 0), Color3.fromRGB(0, 255, 0))
 
-    local rootP = char.PrimaryPart.Position
-    local camP = Camera.CFrame.Position
-    local relative = CF(V3(rootP.X, camP.Y, rootP.Z), camP):PointToObjectSpace(pos)
-
-    return V2(relative.X, relative.Z)
+local function NewCircle(Transparency, Color, Radius, Filled, Thickness)
+    local c = Drawing.new("Circle")
+    c.Transparency = Transparency
+    c.Color = Color
+    c.Visible = false
+    c.Thickness = Thickness
+    c.Position = Vector2.new(0, 0)
+    c.Radius = Radius
+    c.NumSides = math.clamp(Radius*55/100, 10, 75)
+    c.Filled = Filled
+    return c
 end
 
-local function RelativeToCenter(v)
-    return Camera.ViewportSize/2 - v
+local RadarInfo = {
+    Position = Vector2.new(200, 200),
+    Radius = 100,
+    Scale = 1, -- Determinant factor on the effect of the relative position for the 2D integration
+    RadarBack = Color3.fromRGB(10, 10, 10),
+    RadarBorder = Color3.fromRGB(75, 75, 75),
+    LocalPlayerDot = Color3.fromRGB(255, 255, 255),
+    PlayerDot = Color3.fromRGB(60, 170, 255),
+    Team = Color3.fromRGB(0, 255, 0),
+    Enemy = Color3.fromRGB(255, 0, 0),
+    Health_Color = true,
+    Team_Check = true
+}
+
+local RadarBackground = NewCircle(0.9, RadarInfo.RadarBack, RadarInfo.Radius, true, 1)
+RadarBackground.Visible = true
+RadarBackground.Position = RadarInfo.Position
+
+local RadarBorder = NewCircle(0.75, RadarInfo.RadarBorder, RadarInfo.Radius, false, 3)
+RadarBorder.Visible = true
+RadarBorder.Position = RadarInfo.Position
+
+local function GetRelative(pos)
+    local char = Player.Character
+    if char ~= nil and char.PrimaryPart ~= nil then
+        local pmpart = char.PrimaryPart
+        local camerapos = Vector3.new(Camera.CFrame.Position.X, pmpart.Position.Y, Camera.CFrame.Position.Z)
+        local newcf = CFrame.new(pmpart.Position, camerapos)
+        local r = newcf:PointToObjectSpace(pos)
+        return r.X, r.Z
+    else
+        return 0, 0
+    end
 end
 
-local function RotateVect(v, a)
-    a = RAD(a)
-    local x = v.x * COS(a) - v.y * SIN(a)
-    local y = v.x * SIN(a) + v.y * COS(a)
-
-    return V2(x, y)
-end
-
-local function DrawTriangle(color)
-    local l = DRAWING("Triangle")
-    l.Visible = false
-    l.Color = color
-    l.Filled = TriangleFilled
-    l.Thickness = TriangleThickness
-    l.Transparency = 1-TriangleTransparency
-    return l
-end
-
-local function AntiA(v)
-    if (not AntiAliasing) then return v end
-    return V2(ROUND(v.x), ROUND(v.y))
-end
-
-local function ShowArrow(PLAYER)
-    local Arrow = DrawTriangle(TriangleColor)
+local function PlaceDot(plr)
+    local PlayerDot = NewCircle(1, RadarInfo.PlayerDot, 3, true, 1)
 
     local function Update()
-        local c ; c = RS.RenderStepped:Connect(function()
-            if PLAYER and PLAYER.Character then
-                local CHAR = PLAYER.Character
-                local HUM = CHAR:FindFirstChildOfClass("Humanoid")
+        local c 
+        c = game:service("RunService").RenderStepped:Connect(function()
+            local char = plr.Character
+            if char and char:FindFirstChildOfClass("Humanoid") and char.PrimaryPart ~= nil and char:FindFirstChildOfClass("Humanoid").Health > 0 then
+                local hum = char:FindFirstChildOfClass("Humanoid")
+                local scale = RadarInfo.Scale
+                local relx, rely = GetRelative(char.PrimaryPart.Position)
+                local newpos = RadarInfo.Position - Vector2.new(relx * scale, rely * scale) 
+                
+                if (newpos - RadarInfo.Position).magnitude < RadarInfo.Radius-2 then 
+                    PlayerDot.Radius = 3   
+                    PlayerDot.Position = newpos
+                    PlayerDot.Visible = true
+                else 
+                    local dist = (RadarInfo.Position - newpos).magnitude
+                    local calc = (RadarInfo.Position - newpos).unit * (dist - RadarInfo.Radius)
+                    local inside = Vector2.new(newpos.X + calc.X, newpos.Y + calc.Y)
+                    PlayerDot.Radius = 2
+                    PlayerDot.Position = inside
+                    PlayerDot.Visible = true
+                end
 
-                if HUM and CHAR.PrimaryPart ~= nil and HUM.Health > 0 then
-                    local _,vis = Camera:WorldToViewportPoint(CHAR.PrimaryPart.Position)
-                    if vis == false then
-                        local rel = GetRelative(CHAR.PrimaryPart.Position, Player.Character)
-                        local direction = rel.unit
+                PlayerDot.Color = RadarInfo.PlayerDot
+                if RadarInfo.Team_Check then
+                    if plr.TeamColor == Player.TeamColor then
+                        PlayerDot.Color = RadarInfo.Team
+                    else
+                        PlayerDot.Color = RadarInfo.Enemy
+                    end
+                end
 
-                        local base  = direction * DistFromCenter
-                        local sideLength = TriangleWidth/2
-                        local baseL = base + RotateVect(direction, 90) * sideLength
-                        local baseR = base + RotateVect(direction, -90) * sideLength
-
-                        local tip = direction * (DistFromCenter + TriangleHeight)
-                        
-                        Arrow.PointA = AntiA(RelativeToCenter(baseL))
-                        Arrow.PointB = AntiA(RelativeToCenter(baseR))
-
-                        Arrow.PointC = AntiA(RelativeToCenter(tip))
-
-                        Arrow.Visible = true
-
-                    else Arrow.Visible = false end
-                else Arrow.Visible = false end
+                if RadarInfo.Health_Color then
+                    PlayerDot.Color = HealthBarLerp(hum.Health / hum.MaxHealth)
+                end
             else 
-                Arrow.Visible = false
-
-                if not PLAYER or not PLAYER.Parent then
-                    Arrow:Remove()
+                PlayerDot.Visible = false
+                if Players:FindFirstChild(plr.Name) == nil then
+                    PlayerDot:Remove()
                     c:Disconnect()
                 end
             end
         end)
     end
-
-    CWRAP(Update)()
+    coroutine.wrap(Update)()
 end
 
 for _,v in pairs(Players:GetChildren()) do
     if v.Name ~= Player.Name then
-        ShowArrow(v)
+        PlaceDot(v)
     end
 end
 
+local function NewLocalDot()
+    local d = Drawing.new("Triangle")
+    d.Visible = true
+    d.Thickness = 1
+    d.PointC = RadarInfo.Position + Vector2.new(3, 6)
+    return d
+end
+
+local LocalPlayerDot = NewLocalDot()
+
 Players.PlayerAdded:Connect(function(v)
     if v.Name ~= Player.Name then
-        ShowArrow(v)
+        PlaceDot(v)
+    end
+    LocalPlayerDot:Remove()
+    LocalPlayerDot = NewLocalDot()
+end)
+
+-- Loop
+coroutine.wrap(function()
+    local c 
+    c = game:service("RunService").RenderStepped:Connect(function()
+        if LocalPlayerDot ~= nil then
+            LocalPlayerDot.Color = RadarInfo.LocalPlayerDot
+            LocalPlayerDot.PointA = RadarInfo.Position + Vector2.new(0, -6)
+            LocalPlayerDot.PointB = RadarInfo.Position + Vector2.new(-3, 6)
+            LocalPlayerDot.PointC = RadarInfo.Position + Vector2.new(3, 6)
+        end
+        RadarBackground.Position = RadarInfo.Position
+        RadarBackground.Radius = RadarInfo.Radius
+        RadarBackground.Color = RadarInfo.RadarBack
+
+        RadarBorder.Position = RadarInfo.Position
+        RadarBorder.Radius = RadarInfo.Radius
+        RadarBorder.Color = RadarInfo.RadarBorder
+    end)
+end)()
+
+-- Draggable
+local inset = game:service("GuiService"):GetGuiInset()
+
+local dragging = false
+local offset = Vector2.new(0, 0)
+UIS.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 and (Vector2.new(Mouse.X, Mouse.Y + inset.Y) - RadarInfo.Position).magnitude < RadarInfo.Radius then
+        offset = RadarInfo.Position - Vector2.new(Mouse.X, Mouse.Y)
+        dragging = true
     end
 end)
+
+UIS.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = false
+    end
+end)
+
+coroutine.wrap(function()
+    local dot = NewCircle(1, Color3.fromRGB(255, 255, 255), 3, true, 1)
+    local c 
+    c = game:service("RunService").RenderStepped:Connect(function()
+        if (Vector2.new(Mouse.X, Mouse.Y + inset.Y) - RadarInfo.Position).magnitude < RadarInfo.Radius then
+            dot.Position = Vector2.new(Mouse.X, Mouse.Y + inset.Y)
+            dot.Visible = true
+        else 
+            dot.Visible = false
+        end
+        if dragging then
+            RadarInfo.Position = Vector2.new(Mouse.X, Mouse.Y) + offset
+        end
+    end)
+end)()
+
+--[[ Example:
+wait(3)
+RadarInfo.Position = Vector2.new(300, 300)
+RadarInfo.Radius = 150
+RadarInfo.RadarBack = Color3.fromRGB(50, 0, 0)
+]]
